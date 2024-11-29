@@ -31,17 +31,17 @@ def create_features(df, n_prev_games):
         player_data = df[df['player_id'] == player_id]
 
         for i in range(n_prev_games, len(player_data)):
-            # Seleccionar les estadístiques dels últims 5 partits
             last_games = player_data.iloc[i-n_prev_games:i]
             X = last_games[['assists', 'bonus', 'bps', 'clean_sheets', 'creativity', 'goals_conceded',
                             'goals_scored', 'ict_index', 'influence', 'minutes', 
                             'own_goals', 'penalties_missed', 'penalties_saved', 'red_cards', 'saves', 
                             'selected', 'team_a_score', 'team_h_score', 'threat', 'transfers_balance', 
                             'transfers_in', 'transfers_out', 'value', 'was_home', 'yellow_cards']].mean(axis=0)
-
-            # Afegir la jornada a la qual volem predir la puntuació
+            
+            # Afegir player_id a les característiques
+            X['player_id'] = player_id
+            
             target_value = player_data.iloc[i]['total_points']
-
             features.append(X)
             target.append(target_value)
     
@@ -63,7 +63,26 @@ rf.fit(X_train, y_train)
 
 # 6. Predicció de les puntuacions
 y_pred = rf.predict(X_test)
-print(y_pred)
+
+
+# Filtra les dades de la prova (X_test) per identificar el jugador
+player_id = 187 #187 = Roberto Firmino
+
+# Troba els índexs de les dades de prova (X_test) que corresponen a aquest jugador
+player_test_indices = X_test[X_test['player_id'] == player_id].index
+
+# Comprova si trobes el jugador al conjunt de prova
+if len(player_test_indices) > 0:
+    # Suposem que hi ha un únic jugador amb aquest player_id al conjunt de prova
+    player_index = player_test_indices[0]
+    
+    # Obtenim la predicció de y_pred per aquest jugador
+    player_prediction = y_pred[list(X_test.index).index(player_index)]
+
+    print(f'La puntuació predicha per al jugador {player_id} és: {player_prediction}')
+else:
+    print(f'El jugador {player_id} no es troba al conjunt de prova.')
+
 
 # 7. Avaluar el model
 mae = mean_absolute_error(y_test, y_pred)
