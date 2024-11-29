@@ -1,0 +1,31 @@
+QUE HEM DE FER: 
+
+- veure diferents errors i comparar-los 
+    - cross-validation
+    - MSE
+    - mirar outliers
+    - Rsquared
+    - Out-of-Bag
+
+- diferents models: 
+    Random Forest Regression
+    Gradient boosting
+    model LSTM
+     
+
+- fer matriu de confusio per cada model
+
+- fer ROC curve
+
+- fer grafics i estadistiques (crear un excel)
+
+- Fem el mateix per el model a l'instant, al cap de un mes i sis mesos (per exemple)
+
+- utilitzar totes les dades del dataset
+
+
+NEXT WEEK TO-DO:
+
+- tenir fets tots els erros i comparats en un excel
+- i matriu de confusio per Random Forest Regression
+- fer la ROC curve

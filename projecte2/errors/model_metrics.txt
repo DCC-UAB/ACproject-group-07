@@ -1,0 +1,6 @@
+Mètriques del model:
+R² Score (Train): 0.999
+R² Score (Test): 0.994
+MAE (Test): 0.029
+RMSE (Test): 0.190
+Temps d'entrenament: 8.659 segons
