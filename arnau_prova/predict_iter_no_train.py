@@ -1,121 +1,92 @@
-# Importació de llibreries
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import mean_absolute_error
-import matplotlib.pyplot as plt
+import joblib
 
-def load_and_preprocess_data(file_path):
-    """Carrega i preprocessa el dataset."""
-    df = pd.read_csv(file_path)
-    df['kickoff_time'] = pd.to_datetime(df['kickoff_time'])
-    df['round'] = df['kickoff_time'].dt.strftime('%Y-%m-%d')  # Identificar les jornades
-    df = df.sort_values(by=['player_id', 'round'])
-    return df
+# Carregar les dades des de l'arxiu CSV
+df = pd.read_csv('./data/fantasy_data.csv')
 
-def create_features(df, n_prev_games):
-    """Crea les característiques i la variable objectiu utilitzant les darreres n jornades."""
-    features = []
-    target = []
+# Convertir kickoff_time a datetime i crear round
+df['kickoff_time'] = pd.to_datetime(df['kickoff_time'])
+df['round'] = df['kickoff_time'].dt.strftime('%Y-%m-%d')
 
-    for player_id in df['player_id'].unique():
-        player_data = df[df['player_id'] == player_id]
+# Ordenar les dades pel jugador i la jornada
+df = df.sort_values(by=['player_id', 'round'])
 
-        for i in range(n_prev_games, len(player_data)):
-            last_games = player_data.iloc[i-n_prev_games:i]
-            X = last_games[['assists', 'bonus', 'bps', 'clean_sheets', 'creativity', 'goals_conceded',
-                            'goals_scored', 'ict_index', 'influence', 'minutes', 
-                            'own_goals', 'penalties_missed', 'penalties_saved', 'red_cards', 'saves', 
-                            'selected', 'team_a_score', 'team_h_score', 'threat', 'transfers_balance', 
-                            'transfers_in', 'transfers_out', 'value', 'was_home', 'yellow_cards']].mean(axis=0)
-            
-            # Afegir identificadors categòrics
-            X['player_id'] = player_id
-            X['player_name'] = player_data.iloc[i]['player_name']
-            X['team'] = player_data.iloc[i]['team']
-            
-            target_value = player_data.iloc[i]['total_points']
-            features.append(X)
-            target.append(target_value)
+def predict_player_points(df, player_name=None, player_id=None, n_prev_games=5):
+    """
+    Prediu els punts esperats per un jugador específic utilitzant el model entrenat.
+    """
+    # Carregar el model i les columnes
+    model = joblib.load('saved_model/model_rf.joblib')
+    model_columns = joblib.load('saved_model/model_columns.joblib')
     
-    return pd.DataFrame(features), target
+    # Filtrar per jugador
+    if player_name is not None:
+        player_data = df[df['player_name'] == player_name].copy()
+    elif player_id is not None:
+        player_data = df[df['player_id'] == player_id].copy()
+    else:
+        raise ValueError("Has d'especificar player_name o player_id")
+    
+    if len(player_data) == 0:
+        raise ValueError("No s'han trobat dades per aquest jugador")
+        
+    # Ordenar per data
+    player_data = player_data.sort_values('round')
+    
+    # Obtenir les últimes n jornades
+    if len(player_data) < n_prev_games:
+        raise ValueError(f"No hi ha prou dades. Es necessiten {n_prev_games} partits i només n'hi ha {len(player_data)}")
+    
+    # Crear features pel jugador
+    numeric_cols = ['assists', 'bonus', 'bps', 'clean_sheets', 'creativity',
+                   'goals_conceded', 'goals_scored', 'ict_index', 'influence', 
+                   'minutes', 'own_goals', 'penalties_missed', 'penalties_saved', 
+                   'red_cards', 'saves', 'selected', 'team_a_score', 'team_h_score', 
+                   'threat', 'transfers_balance', 'transfers_in', 'transfers_out', 
+                   'value', 'yellow_cards', 'ppm']
+    
+    # Agafar les últimes n jornades
+    last_games = player_data.iloc[-n_prev_games:]
+    current_game = player_data.iloc[-1]  # Utilitzem l'últim partit com a referència
+    
+    # Crear features
+    X_numeric = last_games[numeric_cols].values.flatten()
+    additional_features = [
+        current_game['player_id'],
+        current_game['player_name'],
+        current_game['team'],
+        current_game['opponent_team'],
+        1 if current_game['was_home'] else 0
+    ]
+    
+    # Combinar features
+    X = np.concatenate([X_numeric, additional_features])
+    
+    # Crear DataFrame amb els noms de columnes correctes
+    feature_names = []
+    for i in range(n_prev_games):
+        for col in numeric_cols:
+            feature_names.append(f"{col}_game_{i+1}")
+    feature_names.extend(['player_id', 'player_name', 'team', 'opponent_team', 'was_home'])
+    
+    X_df = pd.DataFrame([X], columns=feature_names)
+    
+    # Convertir a dummies
+    X_df = pd.get_dummies(X_df, columns=['player_name', 'team', 'opponent_team'])
+    
+    # Assegurar que tenim totes les columnes necessàries
+    missing_cols = {col: 0 for col in model_columns if col not in X_df.columns}
+    X_df = pd.concat([X_df, pd.DataFrame(missing_cols, index=X_df.index)], axis=1)
+    
+    # Reordenar columnes per coincidir amb el model
+    X_df = X_df[model_columns]
+    
+    # Fer la predicció
+    prediction = model.predict(X_df)[0]
+    
+    return prediction
 
-def train_model(X, y):
-    """Entrena un model Random Forest."""
-    rf = RandomForestRegressor(n_estimators=100, random_state=42)
-    rf.fit(X, y)
-    return rf
-
-def iterative_predictions_for_all(df, model, n_prev_games, n_max_games):
-    """
-    Realitza prediccions iteratives per a tots els jugadors del dataset.
-    """
-    all_predictions = {}
-
-    for player_id in df['player_id'].unique():
-        player_data = df[df['player_id'] == player_id].sort_values(by='round')
-
-        # Comprovar si el jugador té prou partits
-        if len(player_data) < n_max_games:
-            continue  # Ometre jugadors amb menys partits disponibles
-
-        predictions = []
-        current_window = player_data.iloc[:n_prev_games].copy()
-
-        for i in range(n_prev_games, n_max_games):
-            # Ensure the current window has the same features as the training set
-            X_current = current_window[['assists', 'bonus', 'bps', 'clean_sheets', 'creativity', 'goals_conceded',
-                                        'goals_scored', 'ict_index', 'influence', 'minutes', 
-                                        'own_goals', 'penalties_missed', 'penalties_saved', 'red_cards', 'saves', 
-                                        'selected', 'team_a_score', 'team_h_score', 'threat', 'transfers_balance', 
-                                        'transfers_in', 'transfers_out', 'value', 'was_home', 'yellow_cards']].mean().values.reshape(1, -1)
-
-            # Add missing features to match the training set
-            for col in model.feature_importances_:
-                if col not in X_current.columns:
-                    X_current[col] = 0  # or any default value
-
-            y_pred = model.predict(X_current)[0]
-            predictions.append(y_pred)
-
-            new_row = player_data.iloc[i].copy()
-            new_row['total_points'] = y_pred
-            current_window = pd.concat([current_window.iloc[1:], pd.DataFrame([new_row])])
-
-        all_predictions[player_id] = predictions
-
-    return all_predictions
-
-def main():
-    # Paràmetres
-    file_path = './data/fantasy_data.csv'
-    n_prev_games = 5
-    n_max_games = 8
-
-    # 1. Carregar i preprocessar les dades
-    df = load_and_preprocess_data(file_path)
-
-    # 2. Crear característiques i variable objectiu
-    X, y = create_features(df, n_prev_games)
-    X = pd.get_dummies(X, columns=['player_name', 'team'], drop_first=True)
-
-    # 3. Dividir les dades en entrenament i prova
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-    # 4. Entrenar el model
-    rf = train_model(X_train, y_train)
-
-    # 5. Predicció en el conjunt de prova
-    y_pred = rf.predict(X_test)
-    mae = mean_absolute_error(y_test, y_pred)
-    print(f"Error mitjà absolut en el conjunt de prova: {mae}")
-
-    # 6. Prediccions iteratives per a tots els jugadors
-    all_predictions = iterative_predictions_for_all(df, rf, n_prev_games, n_max_games)
-    print("Prediccions iteratives per a tots els jugadors:")
-    for player_id, predictions in all_predictions.items():
-        print(f"Jugador {player_id}: {predictions}")
-
-if __name__ == "__main__":
-    main()
+# Per nom
+punts = predict_player_points(df, player_name="Aaron Connolly")
+print(f"Punts esperats per Aaron Connolly: {punts:.2f}")

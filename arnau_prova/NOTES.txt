@@ -1,5 +1,7 @@
 predict_general -> entrenament del model base
 
+predict_iter_no_mean -> entrenament del model base sense fer la mitjana
+
 predict_iter_no_train -> ja tenim el model entrenat i l'agafem directement,
 aixi no hem de entrenar-lo tota la estona
 
