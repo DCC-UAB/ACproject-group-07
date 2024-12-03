@@ -22,7 +22,7 @@ df['round'] = df['kickoff_time'].dt.strftime('%Y-%m-%d')  # O una altra manera p
 # Ordenar les dades pel jugador i la jornada
 df = df.sort_values(by=['player_id', 'round'])
 
-# 1. Crear les característiques utilitzant les 5 darreres jornades
+# 1. Crear les característiques utilitzant les n darreres jornades
 def create_features(df, n_prev_games):
     features = []
     target = []
@@ -38,8 +38,10 @@ def create_features(df, n_prev_games):
                             'selected', 'team_a_score', 'team_h_score', 'threat', 'transfers_balance', 
                             'transfers_in', 'transfers_out', 'value', 'was_home', 'yellow_cards']].mean(axis=0)
             
-            # Afegir player_id a les característiques
+            # Afegir player_id, player_name i team a les característiques
             X['player_id'] = player_id
+            X['player_name'] = player_data.iloc[i]['player_name']
+            X['team'] = player_data.iloc[i]['team']
             
             target_value = player_data.iloc[i]['total_points']
             features.append(X)
@@ -51,8 +53,8 @@ def create_features(df, n_prev_games):
 n_prev_games = 5
 X, y = create_features(df, n_prev_games)
 
-# 3. Convertir les variables categòriques en dummies (una sola columna per cada categoria, evitant col·lisions)
-X = pd.get_dummies(X, drop_first=True)
+# 3. Convertir les variables categòriques en dummies (incloent 'player_name' i 'team')
+X = pd.get_dummies(X, columns=['player_name', 'team'], drop_first=True)
 
 # 4. Dividir les dades en entrenament i prova
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
@@ -64,26 +66,31 @@ rf.fit(X_train, y_train)
 # 6. Predicció de les puntuacions
 y_pred = rf.predict(X_test)
 
+# Interacció amb l'usuari
+option = input('Vols veure la puntuació d\'un jugador? (y/n): ')
 
-# Filtra les dades de la prova (X_test) per identificar el jugador
-player_id = 187 #187 = Roberto Firmino
+if option.lower() == 'y':
+    player_name_input = input('Introdueix el nom del jugador: ').strip()
 
-# Troba els índexs de les dades de prova (X_test) que corresponen a aquest jugador
-player_test_indices = X_test[X_test['player_id'] == player_id].index
+    # Filtra les dades de la prova (X_test) per identificar el jugador pel seu nom
+    player_test_indices = X_test.filter(like=f'player_name_{player_name_input}', axis=1)
 
-# Comprova si trobes el jugador al conjunt de prova
-if len(player_test_indices) > 0:
-    # Suposem que hi ha un únic jugador amb aquest player_id al conjunt de prova
-    player_index = player_test_indices[0]
-    
-    # Obtenim la predicció de y_pred per aquest jugador
-    player_prediction = y_pred[list(X_test.index).index(player_index)]
+    # Comprova si hi ha coincidències amb el nom del jugador al conjunt de prova
+    if not player_test_indices.empty:
+        # Obtenim els índexs on apareix el jugador
+        player_indices = player_test_indices.sum(axis=1).astype(bool)
+        player_predictions = y_pred[player_indices]
 
-    print(f'La puntuació predicha per al jugador {player_id} és: {player_prediction}')
+        if len(player_predictions) > 0:
+            print(f'Les puntuacions predites per al jugador {player_name_input} són: {player_predictions}')
+        else:
+            print(f'No s\'han trobat dades per al jugador {player_name_input} al conjunt de prova.')
+    else:
+        print(f'El jugador {player_name_input} no es troba al conjunt de prova.')
 else:
-    print(f'El jugador {player_id} no es troba al conjunt de prova.')
-
+    print(y_pred)
 
 # 7. Avaluar el model
 mae = mean_absolute_error(y_test, y_pred)
 print(f'Mean Absolute Error: {mae}')
+
