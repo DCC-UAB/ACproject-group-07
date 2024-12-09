@@ -9,3 +9,5 @@ predict_iter -> predim iterativament per veure la solidesa del model
 al llarg del temps
 
 predict_searc -> busquem la puntuació d'un jugador en concret
+
+

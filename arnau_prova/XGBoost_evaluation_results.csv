@@ -1,0 +1,2 @@
+n_prev_games,n_estimators,max_depth,learning_rate,validation_MAE,validation_MSE,validation_RMSE,test_MAE,test_MSE,test_RMSE,best_iteration
+2,1000,6,0.1,1.21429757422706,4.52305219751599,2.1267468578831825,1.1822181336421171,4.418222548159786,2.1019568378441518,30
