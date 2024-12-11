@@ -167,10 +167,10 @@ def evaluate_model_parameters(df, n_prev_games_list, n_estimators_list, max_dept
     return results_df
 
 
-n_prev_games_list = [2] #despres fer per 5 i 10
+n_prev_games_list = [10] #despres fer per 5 i 10
 n_estimators_list = [1000]
 max_depth_list = [10]
-min_samples_split_list = [2]
+min_samples_split_list = [5]
 
 # Executar l'avaluació
 results = evaluate_model_parameters(df,n_prev_games_list, n_estimators_list, max_depth_list, min_samples_split_list)

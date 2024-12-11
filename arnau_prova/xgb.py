@@ -178,11 +178,58 @@ def evaluate_xgboost_parameters(df, n_prev_games_list, n_estimators_list, max_de
         print("No s'han obtingut resultats")
         return pd.DataFrame()
 
+
+def plot_error_evolution(results_df):
+    """
+    Crea una gràfica que mostra l'evolució dels errors segons n_prev_games
+    """
+    plt.figure(figsize=(12, 6))
+    
+    # Calcular la mitjana dels errors per cada n_prev_games
+    error_means = results_df.groupby('n_prev_games').agg({
+        'validation_MAE': 'mean',
+        'validation_RMSE': 'mean',
+        'test_MAE': 'mean',
+        'test_RMSE': 'mean'
+    }).reset_index()
+    
+    # Crear les línies per cada tipus d'error
+    plt.plot(error_means['n_prev_games'], error_means['validation_MAE'], 
+             marker='o', label='Validation MAE', linestyle='-', color='blue')
+    plt.plot(error_means['n_prev_games'], error_means['validation_RMSE'], 
+             marker='s', label='Validation RMSE', linestyle='-', color='red')
+    plt.plot(error_means['n_prev_games'], error_means['test_MAE'], 
+             marker='o', label='Test MAE', linestyle='--', color='lightblue')
+    plt.plot(error_means['n_prev_games'], error_means['test_RMSE'], 
+             marker='s', label='Test RMSE', linestyle='--', color='lightcoral')
+
+    # Configurar la gràfica
+    plt.xlabel('Nombre de partits previs')
+    plt.ylabel('Error')
+    plt.title('Evolució dels errors segons el nombre de partits previs')
+    plt.grid(True, linestyle='--', alpha=0.7)
+    plt.legend()
+    
+    # Afegir els valors a cada punt
+    for metric in ['validation_MAE', 'validation_RMSE', 'test_MAE', 'test_RMSE']:
+        for i, row in error_means.iterrows():
+            plt.annotate(f'{row[metric]:.3f}', 
+                        (row['n_prev_games'], row[metric]),
+                        textcoords="offset points", 
+                        xytext=(0,10), 
+                        ha='center',
+                        fontsize=8)
+    
+    plt.tight_layout()
+    return plt
+
+
+
 # Paràmetres per XGBoost
-n_prev_games_list = [2]  # Després provar amb 5 i 10
-n_estimators_list = [1000]
+n_prev_games_list = [3,4,5,6,7,8,9,10]  # Després provar amb 5 i 10
+n_estimators_list = [500]
 max_depth_list = [6]  # XGBoost normalment funciona millor amb arbres més petits
-learning_rate_list = [0.1]
+learning_rate_list = [0.05]
 
 # Executar avaluació per XGBoost
 xgb_results = evaluate_xgboost_parameters(
@@ -194,9 +241,15 @@ xgb_results = evaluate_xgboost_parameters(
 )
 
 # Guardar resultats només si tenim resultats
+# Després d'executar l'avaluació de XGBoost, afegeix:
 if not xgb_results.empty:
     xgb_results.to_csv('XGBoost_evaluation_results.csv', index=False)
     print("\nMillors resultats XGBoost:")
     print(xgb_results.head())
+    
+    # Crear i guardar la gràfica
+    plt = plot_error_evolution(xgb_results)
+    plt.savefig('error_evolution.png', dpi=300, bbox_inches='tight')
+    plt.close()
 else:
     print("No s'han pogut generar resultats")
