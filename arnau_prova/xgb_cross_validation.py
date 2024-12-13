@@ -6,6 +6,43 @@ from sklearn.model_selection import train_test_split, KFold
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 import xgboost as xgb
 from data_processing import load_or_create_features, get_test_player_names, get_player_info
+import matplotlib.pyplot as plt
+    
+
+
+def plot_fold_results(fold_results):
+    """
+    Crea visualitzacions dels resultats per cada fold.
+    """
+   
+    # Preparar dades
+    folds = [r['fold'] for r in fold_results]
+    maes = [r['mae'] for r in fold_results]
+    rmses = [r['rmse'] for r in fold_results]
+    
+    # Crear figura amb dos subplots
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
+    
+    # Plot MAE
+    ax1.bar(folds, maes, color='skyblue')
+    ax1.axhline(y=np.mean(maes), color='red', linestyle='--', label=f'Mitjana: {np.mean(maes):.2f}')
+    ax1.set_title('MAE per cada Fold')
+    ax1.set_xlabel('Fold')
+    ax1.set_ylabel('MAE')
+    ax1.grid(True, alpha=0.3)
+    ax1.legend()
+    
+    # Plot RMSE
+    ax2.bar(folds, rmses, color='lightgreen')
+    ax2.axhline(y=np.mean(rmses), color='red', linestyle='--', label=f'Mitjana: {np.mean(rmses):.2f}')
+    ax2.set_title('RMSE per cada Fold')
+    ax2.set_xlabel('Fold')
+    ax2.set_ylabel('RMSE')
+    ax2.grid(True, alpha=0.3)
+    ax2.legend()
+    
+    plt.tight_layout()
+    return fig
 
 def train_with_cross_validation(features_df, n_folds=5, random_state=42):
     """
@@ -15,23 +52,18 @@ def train_with_cross_validation(features_df, n_folds=5, random_state=42):
     X = features_df.drop(columns=['player_id', 'target_total_points', 'prediction_game_number', 'prediction_date'])
     y = features_df['target_total_points']
 
-    # Configurar la validació creuada
     kf = KFold(n_splits=n_folds, shuffle=True, random_state=random_state)
     
-    # Llistes per guardar els resultats
     mae_scores = []
     rmse_scores = []
     fold_results = []
     
     print(f"\nRealitzant {n_folds}-fold cross validation...")
     
-    # Per cada fold
     for fold, (train_idx, val_idx) in enumerate(kf.split(X), 1):
-        # Split de dades per aquest fold
         X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
         y_train, y_val = y.iloc[train_idx], y.iloc[val_idx]
         
-        # Entrenar model
         model = xgb.XGBRegressor(
             n_estimators=100,
             max_depth=6,
@@ -41,7 +73,6 @@ def train_with_cross_validation(features_df, n_folds=5, random_state=42):
             eval_metric='mae'
         )
         
-        # Fit del model
         model.fit(
             X_train,
             y_train,
@@ -49,10 +80,8 @@ def train_with_cross_validation(features_df, n_folds=5, random_state=42):
             verbose=False
         )
         
-        # Prediccions
         val_pred = model.predict(X_val)
         
-        # Calcular mètriques
         mae = mean_absolute_error(y_val, val_pred)
         rmse = np.sqrt(mean_squared_error(y_val, val_pred))
         
@@ -69,12 +98,20 @@ def train_with_cross_validation(features_df, n_folds=5, random_state=42):
         print(f"MAE: {mae:.2f}")
         print(f"RMSE: {rmse:.2f}")
     
-    # Calcular i mostrar resultats finals
+    # Guardar resultats en CSV
+    results_df = pd.DataFrame(fold_results)
+    results_df.to_csv('results/fold_results_2.csv', index=False)
+    
+    # Crear i guardar plots
+    fig = plot_fold_results(fold_results)
+    fig.savefig('results/fold_results_2.png')
+    plt.close()
+    
     print("\nResultats finals de la validació creuada:")
     print(f"MAE mitjà: {np.mean(mae_scores):.2f} (±{np.std(mae_scores):.2f})")
     print(f"RMSE mitjà: {np.mean(rmse_scores):.2f} (±{np.std(rmse_scores):.2f})")
     
-    # Entrenar model final amb totes les dades
+    # Entrenar model final
     print("\nEntrenant model final amb totes les dades...")
     final_model = xgb.XGBRegressor(
         n_estimators=100,
@@ -100,7 +137,7 @@ if __name__ == "__main__":
     # Entrenar amb cross validation
     model, cv_results = train_with_cross_validation(features_df, n_folds=5)
     
-    # Mostrar resultats detallats per cada fold
+    # Mostrar resultats detallats
     print("\nResultats detallats per cada fold:")
     for fold_result in cv_results['fold_results']:
         print(f"Fold {fold_result['fold']}:")

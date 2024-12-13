@@ -69,7 +69,7 @@ def load_or_create_features(df, n_prev_games, force_create=False):
             raise FileNotFoundError  # Forçar la creació de noves features
             
         print("Carregant features des dels arxius...")
-        features_df = pd.read_csv('data/features_df.csv')
+        features_df = pd.read_csv('data/features_df_2.csv')
         player_info_df = pd.read_csv('data/player_info_df.csv')
         
         # Convertir la columna de dates a datetime
@@ -82,7 +82,7 @@ def load_or_create_features(df, n_prev_games, force_create=False):
         features_df, player_info_df = create_features(df, n_prev_games)
         
         # Guardar els DataFrames
-        features_df.to_csv('data/features_df.csv', index=False)
+        features_df.to_csv('data/features_df_2.csv', index=False)
         player_info_df.to_csv('data/player_info_df.csv', index=False)
         
         print("Features creades i guardades!")

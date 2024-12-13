@@ -1,165 +1,96 @@
-# Importació de llibreries
+# train_rfr_model.py
+
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import train_test_split, TimeSeriesSplit
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, mean_absolute_error
-from sklearn.preprocessing import StandardScaler
-import matplotlib.pyplot as plt
-from tqdm import tqdm
+from sklearn.ensemble import RandomForestRegressor
+from data_processing import load_or_create_features, get_test_player_names, get_player_info
 
-# Carregar les dades des de l'arxiu CSV
-df = pd.read_csv('./data/fantasy_data.csv')
-
-# Comprovem les primeres files per assegurar-nos que les dades s'han carregat correctament
-print(df.head())
-
-# Carregar el DataFrame (df)
-df['kickoff_time'] = pd.to_datetime(df['kickoff_time'])
-
-# Crear una nova columna per 'jornada' (a partir de 'kickoff_time')
-df['round'] = df['kickoff_time'].dt.strftime('%Y-%m-%d')  # O una altra manera per identificar les jornades de manera única
-
-# Ordenar les dades pel jugador i la jornada
-df = df.sort_values(by=['player_id', 'round'])
-
-# 1. Crear les característiques utilitzant les n darreres jornades
-def create_features(df, n_prev_games):
+def train_and_predict_rfr(features_df, val_size=0.2, test_size=0.2, random_state=42):
     """
-    Genera les característiques dels últims n_prev_games partits de manera vectoritzada.
+    Prepara les dades, entrena un model Random Forest Regressor i fa prediccions.
+    
+    Retorna:
+    - model: Model Random Forest entrenat
+    - predictions: Prediccions de validació i test
+    - data_splits: Conjunts de dades per avaluació
     """
-    # Inicialitzar llistes per a features i target
-    features_list = []
-    target_list = []
-    
-    # Llista de columnes que es faran servir com a features
-    feature_columns = [
-        'assists', 'bonus', 'bps', 'clean_sheets', 'creativity',
-        'goals_conceded', 'goals_scored', 'ict_index', 'influence',
-        'minutes', 'own_goals','red_cards', 'saves', 'selected', 'team_a_score', 'team_h_score',
-        'threat', 'transfers_balance', 'transfers_in', 'transfers_out',
-        'value', 'was_home'
-    ]
-    
-    # Processar cada jugador de manera independent
-    for player_id, player_data in df.groupby('player_id'):
-        # Ordenar les dades per 'round' (jornada)
-        player_data = player_data.sort_values('round')
-        
-        # Crear arrays per emmagatzemar les característiques dels partits anteriors
-        for i in range(n_prev_games, len(player_data)):
-            # Seleccionem els darrers n_prev_games partits
-            last_games = player_data.iloc[i-n_prev_games:i]
-            
-            # Generar un diccionari de features
-            X = {}
-            for game_idx, game in enumerate(last_games.itertuples(), start=1):
-                for col in feature_columns:
-                    X[f'{col}_game_{game_idx}'] = getattr(game, col)
-            
-            # Afegir informació del partit actual
-            current_game = player_data.iloc[i]
-            X['player_id'] = player_id
-            X['current_team'] = current_game['team']
-            X['current_opponent'] = current_game['opponent_team']
-            X['current_is_home'] = current_game['was_home']
-            
-            # Afegir target (total points del partit actual)
-            target_value = current_game['total_points']
-            
-            features_list.append(X)
-            target_list.append(target_value)
-    
-    # Convertir les característiques a DataFrame
-    features_df = pd.DataFrame(features_list)
-    return features_df, target_list
+    # Preparar dades
+    X = features_df.drop(columns=['player_id', 'target_total_points', 'prediction_game_number', 'prediction_date'])
+    y = features_df['target_total_points']
 
-def evaluate_model_parameters(df, n_prev_games_list, n_estimators_list, max_depth_list, min_samples_split_list):
+    # Separar en train, validation i test
+    X_temp, X_test, y_temp, y_test = train_test_split(X, y, test_size=test_size, random_state=random_state)
+    X_train, X_val, y_train, y_val = train_test_split(X_temp, y_temp, test_size=val_size, random_state=random_state)
+
+    print("\nDimensions dels conjunts:")
+    print(f"Train set: {X_train.shape}")
+    print(f"Validation set: {X_val.shape}")
+    print(f"Test set: {X_test.shape}")
+
+    # Entrenar model Random Forest
+    model = RandomForestRegressor(
+        n_estimators=100,
+        max_depth=6,
+        random_state=random_state,
+        n_jobs=-1
+    )
+    
+    model.fit(X_train, y_train)
+
+    # Fer prediccions només per validació i test
+    predictions = {
+        'val': model.predict(X_val),
+        'test': model.predict(X_test)
+    }
+    
+    # Guardar dades necessàries per avaluació
+    data_splits = {
+        'y_val': y_val,
+        'y_test': y_test,
+        'X_val': X_val,
+        'X_test': X_test
+    }
+    
+    return model, predictions, data_splits
+
+def evaluate_errors(predictions, data_splits):
     """
-    Avalua el model amb diferents combinacions de paràmetres.
+    Calcula i mostra els errors de validació i test.
     """
-    # Definir els paràmetres a provar
-
-    results = []
-
-     # Calcular el total d'iteracions
-    total_iterations = len(n_prev_games_list) * len(n_estimators_list) * len(max_depth_list) * len(min_samples_split_list)
-    # Inicialitzar la barra de progrés
-    pbar = tqdm(total=total_iterations, desc="Avaluant models")
+    metrics = {}
     
-    for n_prev in n_prev_games_list:
-        print(f"\nProcessant n_prev_games={n_prev}...")
-        # Crear features
-        X, y = create_features(df, n_prev)
+    # Calcular mètriques només per validació i test
+    for split in ['val', 'test']:
+        y_true = data_splits[f'y_{split}']
+        y_pred = predictions[split]
+        print(y_pred.shape)
         
-        # Convert categorical variables to dummies
-        categorical_columns = (
-            [col for col in X.columns if 'team_game_' in col] + 
-            [col for col in X.columns if 'opponent_team_game_' in col] +
-            ['current_team', 'current_opponent', 'player_name']
-        )
-        X = pd.get_dummies(X, columns=categorical_columns, drop_first=True)
+        mae = mean_absolute_error(y_true, y_pred)
+        rmse = np.sqrt(mean_squared_error(y_true, y_pred))
         
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-        
-        # Escalar les dades numèriques
-        scaler = StandardScaler()
-        numeric_cols = [col for col in X_train.columns if col not in ['player_id']]
-        X_train[numeric_cols] = scaler.fit_transform(X_train[numeric_cols])
-        X_test[numeric_cols] = scaler.transform(X_test[numeric_cols])
-        
-        for n_est in n_estimators_list:
-            for max_d in max_depth_list:
-                for min_samples in min_samples_split_list:
-                    # Entrenar model
-                    rf = RandomForestRegressor(
-                        n_estimators=n_est,
-                        max_depth=max_d,
-                        min_samples_split=min_samples,
-                        random_state=42
-                    )
-                    try:
-                        rf.fit(X_train, y_train)
-                        y_pred = rf.predict(X_test)
-                    except Exception as e:
-                        print(f"Error amb paràmetres: n_prev={n_prev}, n_est={n_est}, max_d={max_d}, min_samples={min_samples}")
-                        print(f"Error: {str(e)}")
-                        continue
-                    
-                    # Prediccions i avaluació
-                    mae = mean_absolute_error(y_test, y_pred)
-                    mse = mean_squared_error(y_test, y_pred)
-                    rmse = np.sqrt(mse)
-                    
-                    results.append({
-                        'n_prev_games': n_prev,
-                        'n_estimators': n_est,
-                        'max_depth': str(max_d),
-                        'min_samples_split': min_samples,
-                        'MAE': mae,
-                        'MSE': mse,
-                        'RMSE': rmse
-                    })
-
-                    pbar.update(1) #actualitzem la barra de progrés
+        metrics[split] = {
+            'mae': mae,
+            'rmse': rmse
+        }
     
-    pbar.close()
-    # Convertir a DataFrame i ordenar per MAE
-    results_df = pd.DataFrame(results)
-    results_df = results_df.sort_values('MAE')
+    # Mostrar resultats
+    print("\nResultats de l'avaluació:")
+    for split, metric in metrics.items():
+        print(f"\n{split.capitalize()}:")
+        print(f"MAE: {metric['mae']:.2f}")
+        print(f"RMSE: {metric['rmse']:.2f}")
     
+    return metrics
     
-    return results_df
-
-
-
-n_prev_games_list = [2] #despres fer per 5 i 10
-n_estimators_list = [1000]
-max_depth_list = [10,]
-min_samples_split_list = [2]
-
-# Executar l'avaluació
-results = evaluate_model_parameters(df,n_prev_games_list, n_estimators_list, max_depth_list, min_samples_split_list)
-
-# Opcional: Guardar els resultats en un CSV
-results.to_csv('model_evaluation_results.csv', index=False)
+if __name__ == "__main__":
+    # Carregar dades
+    df = pd.read_csv('./data/fantasy_data.csv')
+    features_df, player_info_df = load_or_create_features(df, n_prev_games=2)
+    
+    # Entrenar model Random Forest i obtenir prediccions
+    model, predictions, data_splits = train_and_predict_rfr(features_df)
+    
+    # Avaluar errors
+    metrics = evaluate_errors(predictions, data_splits)

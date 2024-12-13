@@ -73,6 +73,7 @@ def evaluate_errors(predictions, data_splits):
     for split in ['val', 'test']:
         y_true = data_splits[f'y_{split}']
         y_pred = predictions[split]
+        print(y_pred.shape)
         
         mae = mean_absolute_error(y_true, y_pred)
         rmse = np.sqrt(mean_squared_error(y_true, y_pred))
