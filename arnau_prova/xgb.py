@@ -1,4 +1,5 @@
 # train_model.py
+import matplotlib.pyplot as plt
 
 import pandas as pd
 import numpy as np
@@ -91,7 +92,82 @@ def evaluate_errors(predictions, data_splits):
         print(f"RMSE: {metric['rmse']:.2f}")
     
     return metrics
+      
+
+def plot_predictions_vs_real(y_true, y_pred, split_name='test'):
+    """
+    Crea un gràfic temporal de puntuacions reals vs predites.
+    """
+    plt.figure(figsize=(15, 8))
     
+    # Crear índex per l'eix x
+    x = range(len(y_true))
+    
+    # Gràfic amb línies i punts
+    plt.scatter(x, y_true, color='blue', alpha=0.5, s=20)
+    plt.scatter(x, y_pred, color='orange', alpha=0.5, s=20)
+    
+    plt.title('Resultats Temporals (Prediccions vs Reals)')
+    plt.xlabel('Índex de Mostra')
+    plt.ylabel('Punts')
+    plt.grid(True, alpha=0.3)
+    
+    # Estadístiques
+    mae = mean_absolute_error(y_true, y_pred)
+    rmse = np.sqrt(mean_squared_error(y_true, y_pred))
+    corr = np.corrcoef(y_true, y_pred)[0,1]
+    
+    stats_text = f'MAE: {mae:.2f}\nRMSE: {rmse:.2f}\nCorrelació: {corr:.2f}'
+    plt.text(0.02, 0.95, stats_text,
+             transform=plt.gca().transAxes,
+             bbox=dict(facecolor='white', alpha=0.8),
+             verticalalignment='top')
+    
+    plt.legend()
+    plt.tight_layout()
+    return plt
+
+
+
+def analyze_errors_by_range(y_true, y_pred, split_name='test'):
+    """
+    Analitza els errors per diferents rangs de puntuació.
+    """
+    print(f"\nAnàlisi detallat pel conjunt de {split_name}:")
+    
+    # Errors per rang de punts
+    ranges = [(0,2), (2,5), (5,10), (10,float('inf'))]
+    print("\nErrors per rang de punts:")
+    for min_p, max_p in ranges:
+        mask = (y_true >= min_p) & (y_true < max_p)
+        if mask.any():
+            mae = mean_absolute_error(y_true[mask], y_pred[mask])
+            n_samples = mask.sum()
+            print(f"Punts [{min_p}-{max_p}]: MAE = {mae:.2f} (n={n_samples})")
+    
+    # Actuacions excepcionals
+    threshold = y_true.mean() + y_true.std()
+    exceptional_mask = y_true > threshold
+    if exceptional_mask.any():
+        mae_exceptional = mean_absolute_error(y_true[exceptional_mask], y_pred[exceptional_mask])
+        n_exceptional = exceptional_mask.sum()
+        print(f"\nActuacions excepcionals (>{threshold:.1f} punts):")
+        print(f"MAE = {mae_exceptional:.2f} (n={n_exceptional})")
+    
+    # Estadístiques de predicció
+    print(f"\nEstadístiques de predicció:")
+    print(f"Mitjana real: {y_true.mean():.2f}")
+    print(f"Mitjana predita: {y_pred.mean():.2f}")
+    print(f"Desviació estàndard real: {y_true.std():.2f}")
+    print(f"Desviació estàndard predita: {y_pred.std():.2f}")
+    
+    # Distribució d'errors
+    errors = np.abs(y_true - y_pred)
+    print("\nDistribució d'errors:")
+    for error_threshold in [1, 2, 3, 5]:
+        pct = (errors <= error_threshold).mean() * 100
+        print(f"Prediccions amb error ≤{error_threshold}: {pct:.1f}%")
+
 if __name__ == "__main__":
     # Carregar dades
     df = pd.read_csv('./data/fantasy_data.csv')
@@ -100,5 +176,15 @@ if __name__ == "__main__":
     # Entrenar model i obtenir prediccions
     model, predictions, data_splits = train_and_predict(features_df)
     
-    # Avaluar errors
+    # Avaluar errors globals
     metrics = evaluate_errors(predictions, data_splits)
+    
+    # Analitzar errors per rang i crear gràfics temporals
+    for split in ['val', 'test']:
+        # Anàlisi per rangs
+        analyze_errors_by_range(data_splits[f'y_{split}'], predictions[split], split)
+        
+        # Crear i guardar gràfic temporal
+        plt_temporal = plot_predictions_vs_real(data_splits[f'y_{split}'], predictions[split], split)
+        plt_temporal.savefig(f'results/temporal_plot_{split}.png', dpi=300, bbox_inches='tight')
+        plt.close()
